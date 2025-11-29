@@ -1,0 +1,19 @@
+# --- Standard Node Template ---
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json # Optional: Remove this line if you WANT to commit your lockfile (recommended for apps)
+*.log
+
+# --- Cloudflare Workers Specific ---
+# Wrangler local state and build output
+.wrangler/
+dist/
+worker/
+
+# Secrets (CRITICAL: Never commit this)
+.dev.vars
+
+# --- OS Generated Files ---
+.DS_Store
+Thumbs.db

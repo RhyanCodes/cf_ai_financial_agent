@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CF AI Stock Agent</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .glass { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        body { background-color: #0f172a; color: #e2e8f0; font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="h-screen flex flex-col p-4 md:p-8 overflow-hidden">
+
+    <!-- Header -->
+    <header class="mb-6 flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-bold text-blue-400">CF AI Financial Agent</h1>
+            <p class="text-sm text-gray-400">Powered by Workers AI (Llama 3.3) & Durable Objects</p>
+        </div>
+        <div class="flex gap-2">
+            <div id="connection-status" class="hidden px-3 py-2 bg-yellow-500/20 text-yellow-200 text-xs rounded border border-yellow-500/50 flex items-center">
+                ⚠️ Demo Mode (Backend Unavailable)
+            </div>
+            <button onclick="resetAgent()" class="px-4 py-2 bg-red-900/50 hover:bg-red-900 text-red-200 rounded border border-red-800 transition">
+                Reset Portfolio
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Grid -->
+    <main class="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6 min-h-0">
+        
+        <!-- Left Col: Chat / News Feed -->
+        <section class="md:col-span-2 flex flex-col glass rounded-xl p-4 overflow-hidden">
+            <h2 class="text-xl font-semibold mb-4 flex items-center gap-2">
+                <span>📰</span> News Feed & Agent Log
+            </h2>
+            
+            <div id="chat-history" class="flex-1 overflow-y-auto space-y-4 mb-4 pr-2 scrollbar-thin scrollbar-thumb-gray-700">
+                <div class="p-3 bg-blue-900/20 rounded-lg border border-blue-900/30">
+                    <p class="text-blue-300 text-sm font-bold">System</p>
+                    <p>Agent initialized. Waiting for market news...</p>
+                </div>
+            </div>
+
+            <form id="news-form" class="flex gap-2">
+                <input type="text" id="news-input" 
+                    class="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 transition"
+                    placeholder="Paste financial news headline here (e.g., 'Apple announces new VR headset...')" 
+                    autocomplete="off">
+                <button type="submit" id="send-btn" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-semibold transition flex items-center gap-2">
+                    <span>Analyze</span>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                </button>
+            </form>
+        </section>
+
+        <!-- Right Col: Portfolio State -->
+        <section class="flex flex-col glass rounded-xl p-4 overflow-hidden">
+            <h2 class="text-xl font-semibold mb-4 flex items-center gap-2">
+                <span>💼</span> Portfolio
+            </h2>
+
+            <div class="mb-6">
+                <p class="text-gray-400 text-xs uppercase tracking-wider">Cash Balance</p>
+                <div class="text-3xl font-mono text-green-400" id="cash-display">$...</div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto pr-2">
+                <table class="w-full text-left">
+                    <thead class="text-gray-500 text-xs uppercase border-b border-gray-700">
+                        <tr>
+                            <th class="pb-2">Ticker</th>
+                            <th class="pb-2 text-right">Qty</th>
+                        </tr>
+                    </thead>
+                    <tbody id="holdings-list" class="divide-y divide-gray-800">
+                        <!-- Holdings injected here -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="mt-4 pt-4 border-t border-gray-700">
+                <h3 class="text-sm font-bold text-gray-300 mb-2">Recent Trades</h3>
+                <div id="trade-log" class="text-xs space-y-2 max-h-32 overflow-y-auto text-gray-400 font-mono">
+                    <!-- Mini logs -->
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // --- Configuration ---
+        // Logic to determine API Base URL
+        const isLocalOrPreview = 
+            window.location.hostname === 'localhost' || 
+            window.location.hostname === '127.0.0.1' || 
+            window.location.protocol === 'blob:' ||
+            window.location.protocol === 'file:';
+
+        const API_BASE = isLocalOrPreview ? 'http://127.0.0.1:8787' : '';
+        
+        // --- State Management ---
+        let useMockMode = false;
+        
+        // Mock Data Storage (in case backend is down)
+        let mockState = {
+            portfolio: { cash: 100000, holdings: {} },
+            history: []
+        };
+
+        // --- Core Functions ---
+
+        async function updateState() {
+            try {
+                if (useMockMode) throw new Error("Using Mock Mode");
+
+                const res = await fetch(`${API_BASE}/api/state`);
+                if (!res.ok) throw new Error("API Error");
+                
+                const data = await res.json();
+                renderPortfolio(data);
+            } catch (e) {
+                handleConnectionError(e);
+                // Fallback render
+                renderPortfolio(mockState);
+            }
+        }
+
+        function handleConnectionError(e) {
+            if (!useMockMode) {
+                console.warn("Backend connection failed. Switching to In-Browser Demo Mode.", e);
+                useMockMode = true;
+                document.getElementById('connection-status').classList.remove('hidden');
+                addChatBubble('System', 'Connection to backend failed. Switched to <strong>Demo Simulation Mode</strong>. Trades will be simulated locally.');
+            }
+        }
+
+        function renderPortfolio(data) {
+            // Update Cash
+            document.getElementById('cash-display').innerText = 
+                new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(data.portfolio.cash);
+
+            // Update Holdings
+            const list = document.getElementById('holdings-list');
+            list.innerHTML = '';
+            
+            const holdings = Object.entries(data.portfolio.holdings);
+            if (holdings.length === 0) {
+                list.innerHTML = '<tr><td colspan="2" class="text-gray-600 text-sm py-2 italic">No holdings</td></tr>';
+            } else {
+                holdings.forEach(([ticker, qty]) => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="py-2 font-bold text-white">${ticker}</td>
+                        <td class="py-2 text-right text-gray-300 font-mono">${qty}</td>
+                    `;
+                    list.appendChild(tr);
+                });
+            }
+
+            // Update Mini Log
+            const logDiv = document.getElementById('trade-log');
+            if (data.history.length === 0) {
+                logDiv.innerHTML = '<span class="text-gray-600 italic">No trades yet</span>';
+            } else {
+                logDiv.innerHTML = data.history.slice(0, 5).map(h => 
+                    `<div class="${h.status && h.status.includes('FAILED') ? 'text-red-400' : 'text-green-400'}">
+                        [${h.action}] ${h.ticker} x${h.quantity}
+                    </div>`
+                ).join('');
+            }
+        }
+
+        async function handleNews(e) {
+            e.preventDefault();
+            const input = document.getElementById('news-input');
+            const btn = document.getElementById('send-btn');
+            const news = input.value;
+            if (!news) return;
+
+            // UI Optimistic Update
+            addChatBubble('User', news);
+            input.value = '';
+            btn.disabled = true;
+            btn.innerText = 'Thinking...';
+
+            try {
+                let data;
+                
+                if (useMockMode) {
+                    // --- MOCK LOGIC (Simulates Backend) ---
+                    await new Promise(r => setTimeout(r, 1500)); // Fake network delay
+                    data = simulateAgentDecision(news);
+                } else {
+                    // --- REAL BACKEND LOGIC ---
+                    const res = await fetch(`${API_BASE}/api/chat`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: news })
+                    });
+                    if (!res.ok) throw new Error("API Error");
+                    data = await res.json();
+                }
+                
+                // Construct Response UI
+                const responseText = `
+                    <strong class="${getColor(data.trade_details.action)}">${data.trade_details.action} ${data.trade_details.ticker}</strong><br/>
+                    <span class="text-gray-300 text-sm">${data.agent_reply}</span>
+                `;
+                addChatBubble('Agent', responseText);
+                
+                // Update State
+                if (useMockMode) {
+                    mockState.portfolio = data.new_portfolio;
+                    mockState.history.unshift(data.trade_details);
+                    renderPortfolio(mockState);
+                } else {
+                    renderPortfolio({ portfolio: data.new_portfolio, history: [data.trade_details] });
+                    updateState(); 
+                }
+
+            } catch (err) {
+                console.error(err);
+                handleConnectionError(err);
+                addChatBubble('System', 'Error processing request. Retrying in Demo Mode...');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<span>Analyze</span> <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>`;
+            }
+        }
+
+        // --- Mock Simulation Logic (Runs if backend is offline) ---
+        function simulateAgentDecision(news) {
+            // Simple heuristic to make the demo feel alive
+            const upperNews = news.toUpperCase();
+            let action = "HOLD";
+            let ticker = "UNKNOWN";
+            let reason = "Market is uncertain.";
+            
+            // Detect Ticker
+            if (upperNews.includes("APPLE") || upperNews.includes("AAPL")) ticker = "AAPL";
+            else if (upperNews.includes("TESLA") || upperNews.includes("TSLA")) ticker = "TSLA";
+            else if (upperNews.includes("MICROSOFT") || upperNews.includes("MSFT")) ticker = "MSFT";
+            else if (upperNews.includes("AMAZON") || upperNews.includes("AMZN")) ticker = "AMZN";
+            else ticker = "SPY";
+
+            // Detect Sentiment
+            if (upperNews.includes("RECORD") || upperNews.includes("SURGE") || upperNews.includes("BUY") || upperNews.includes("HIGH")) {
+                action = "BUY";
+                reason = `Bullish signal detected for ${ticker}. Increasing exposure.`;
+            } else if (upperNews.includes("DROP") || upperNews.includes("FALL") || upperNews.includes("SELL") || upperNews.includes("CRASH")) {
+                action = "SELL";
+                reason = `Bearish sentiment detected for ${ticker}. Reducing exposure to preserve capital.`;
+            }
+
+            const price = Math.floor(Math.random() * 200) + 100;
+            const qty = Math.floor(Math.random() * 10) + 1;
+
+            // Execute Mock Trade
+            let status = "EXECUTED";
+            if (action === "BUY") {
+                const cost = price * qty;
+                if (mockState.portfolio.cash >= cost) {
+                    mockState.portfolio.cash -= cost;
+                    mockState.portfolio.holdings[ticker] = (mockState.portfolio.holdings[ticker] || 0) + qty;
+                } else status = "FAILED - FUNDS";
+            } else if (action === "SELL") {
+                if ((mockState.portfolio.holdings[ticker] || 0) >= qty) {
+                    mockState.portfolio.cash += (price * qty);
+                    mockState.portfolio.holdings[ticker] -= qty;
+                    if (mockState.portfolio.holdings[ticker] === 0) delete mockState.portfolio.holdings[ticker];
+                } else status = "FAILED - HOLDINGS";
+            }
+
+            const trade_details = {
+                timestamp: new Date().toISOString(),
+                ticker, action, quantity: qty, price_estimate: price, reason, status
+            };
+
+            return {
+                agent_reply: reason,
+                trade_details: trade_details,
+                new_portfolio: JSON.parse(JSON.stringify(mockState.portfolio))
+            };
+        }
+
+        function getColor(action) {
+            if(action === 'BUY') return 'text-green-400';
+            if(action === 'SELL') return 'text-red-400';
+            return 'text-yellow-400';
+        }
+
+        function addChatBubble(role, html) {
+            const container = document.getElementById('chat-history');
+            const div = document.createElement('div');
+            const isUser = role === 'User';
+            
+            div.className = `p-3 rounded-lg border max-w-[90%] ${
+                isUser 
+                ? 'bg-gray-800 border-gray-700 ml-auto' 
+                : 'bg-blue-900/20 border-blue-900/30 mr-auto'
+            }`;
+            
+            div.innerHTML = `
+                <p class="${isUser ? 'text-gray-400' : 'text-blue-300'} text-xs font-bold mb-1">${role}</p>
+                <div class="text-sm leading-relaxed">${html}</div>
+            `;
+            
+            container.appendChild(div);
+            
+            // Fix: Wait for DOM repaint before scrolling to ensure we hit the bottom
+            requestAnimationFrame(() => {
+                container.scrollTop = container.scrollHeight;
+            });
+        }
+
+        async function resetAgent() {
+            if(!confirm("Reset portfolio to $100k?")) return;
+            if (useMockMode) {
+                mockState = { portfolio: { cash: 100000, holdings: {} }, history: [] };
+                renderPortfolio(mockState);
+            } else {
+                try {
+                    await fetch(`${API_BASE}/api/reset`);
+                    location.reload();
+                } catch(e) {
+                    handleConnectionError(e);
+                }
+            }
+        }
+
+        document.getElementById('news-form').addEventListener('submit', handleNews);
+        
+        // Initial load
+        updateState();
+    </script>
+</body>
+</html>

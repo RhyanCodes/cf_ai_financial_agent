@@ -38,20 +38,20 @@ A Cloudflare account with Workers AI enabled.
 🛠️ Setup & Running Locally
 
 Clone/Create Directory:
-
+```
 mkdir cf_ai_financial_agent
 cd cf_ai_financial_agent
-
+```
 
 Install Dependencies:
-
+```
 npm install
-
+```
 
 Run Locally:
-
+```
 wrangler dev
-
+```
 
 Starts the backend at http://localhost:8787.
 
@@ -63,17 +63,17 @@ Note: The frontend automatically detects if you are running locally. If the back
 📦 Deployment
 
 Deploy Worker:
-
+```
 wrangler deploy
-
+```
 
 Note the URL output (e.g., https://cf-ai-financial-agent.your-subdomain.workers.dev).
 
 Deploy Frontend (Pages):
 You can deploy the public folder to Cloudflare Pages.
-
+```
 npx wrangler pages deploy public
-
+```
 
 Important: Update the API_BASE variable in index.html to your Worker's URL before deploying to production.
 
